@@ -1,0 +1,255 @@
+1.2.3 Procedure
+Step 1 Log in to the Huawei Cloud official website and create ECS ecs-san.
+Step 2 Install the iSCSI software package on the SAN server.
+Log in to ecs-san and install the target software package.
+yum -y install scsi-target-utils
+
+Check the generated files.
+rpm -ql scsi-target-utils
+
+
+Start the target service and enable it to automatically start upon system startup.
+systemctl start tgtd
+systemctl enable tgtd
+
+
+Check the service status and open ports.
+systemctl status tgtd
+netstat -tnlp | grep 3260
+
+
+Step 3 Create a target using the tgtadm command.
+On ecs-san, run the following command to create a target:
+tgtadm --lld iscsi --mode target --op new --tid 1 --targetname iqn.2023-04.com.openeuler:target1
+View information about the created target. This example uses short options, while other
+examples in this lab use long options. Use whichever format as you prefer.
+tgtadm -L iscsi -m target -o show
+
+In the information about the created target, you can see that a logical unit with logical
+unit number (LUN) 0 is automatically created. LUN 0 is created for each target and acts
+as the controller. backing store type is null, indicating that the logical unit has no
+underlying logical device.
+Add a logical unit for the target. A data drive has been added during ecs-san creation.
+Check the location of the drive.
+fdisk -l
+
+A 10 GB drive /dev/vdb is displayed. You can either add the entire drive as a logical unit
+to target1, or partition the drive and add a partition as a logical unit.
+
+tgtadm --lld iscsi --mode logicalunit --op new --tid 1 --lun 1 --backing-store /dev/vdb
+
+Check the target information.
+tgtadm --lld iscsi --mode target --op show
+
+You can see that LUN 1 has been added to target1. LUN 1 is a readable and writable
+(rdwr) device of the disk type and has logical device /dev/bdb. However, Account
+information and ACL information is still empty, indicating that the target is not shared.
+
+Step 4 Configure sharing.
+Bind an IP address to target1 to allow the IP address to connect to target1. The
+following command allows Client01 to connect to target1.
+tgtadm --lld iscsi --mode target --op bind --tid 1 --initiator-address 192.168.1.21
+Check the target information again.
+tgtadm --lld iscsi --mode target --op show
+
+
+
+Step 5 Configure the connection on the client.
+Log in to Client01 and install iscsi-initiator-utils.
+yum -y install iscsi-initiator-utils
+
+
+Start the iscsid service.
+systemctl start iscsid
+systemctl status iscsid
+systemctl enable iscsid
+
+Step 6 Discover and connect to the target.
+On Client01, run the following command to discover the target:
+iscsiadm -m discovery -t sendtargets -p 192.168.1.3
+
+Step 7 Associate and disassociate the target.
+Create a session between the initiator and target by associating the target. This session
+enables the initiator to view, access, and operate SCSI devices of the target.
+On Client01, run the following command to associate all discovered targets:
+iscsiadm -m node -L all
+
+
+Run the fdisk -l command to check the drive list.
+
+On ecs-san, run the following command to check the connection status:
+tgtadm --lld iscsi --op show --mode target
+
+I_T nexus information shows information about connections between initiators and
+LUNs of the target. nexus is the number of association times.
+Run the following command to disassociate the target:
+iscsiadm -m node -T iqn.2023-04.com.openeuler:target1 -u
+
+
+
+Run the following command to associate target 1 again:
+iscsiadm -m node -T iqn.2023-04.com.openeuler:target1 -p 192.168.1.3 -l
+
+
+Run the fdisk -l command to check the drive list again.
+
+Check the connection status.
+iscsiadm -m session
+
+
+Step 8 Format the drive.
+On Client01, check the drive name, format the drive, and write a file to it.
+fdisk -l
+
+
+mkfs.ext4 /dev/sda
+
+Check the drive format.
+blkid /dev/sda
+
+
+⚫ Question: If you format a server drive through a client-side operation, will the
+changes be reflected on the server as well?
+Answer: Yes. The drive format information on ecs-san is as follows.
+blkid /dev/vdb
+
+The drive format is ext4, indicating that the drive on the SAN is formatted.
+
+Step 9 Mount and use the drive.
+On Client01, and create a directory.
+mkdir /mnt/san
+Mount the drive to the directory.
+mount /dev/sda /mnt/san
+df -h
+
+In /mnt/san, create file test.txt and write This is from Client01 into it.
+
+On ecs-san, bind the IP address of Client02 to target1.
+
+tgtadm --lld iscsi --mode target --op bind --tid 1 --initiator-address 192.168.1.22
+
+Log in to Client02 and repeat steps 5 to 7 to connect to target1.
+
+
+iscsidam -m session
+
+
+On ecs-san, run the following command to check the connection status:
+tgtadm --lld iscsi --op show --mode target
+Two I_T nexus records are displayed, each corresponding to a distinct initiator.
+
+On Client02, check the drive information.
+lsblk
+
+
+Create a directory.
+mkdir /mnt/san
+Mount drive /dev/sda to the directory.
+
+
+mount /dev/sda /mnt/san
+
+Check files in the mounted directory. The file created by Client01 exists.
+
+On Client02, go to /mnt/san/, create file test1.txt, and write This is from Client02 to it.
+
+
+On Client01, and check the content of /mnt/san. You can see that data is not
+synchronized.
+
+
+On Client01, create file test2.txt.
+echo "This is from Client01 again" > test2.txt
+cat test2.txt
+
+On Client02, unmount /mnt/san and mount it again. You can see that test1.txt is lost.
+
+
+Step 10 Unmount the drive and disconnect the clients from the target.
+On Client01, unmount /dev/sda.
+umount /mnt/san
+df -h
+
+
+Disconnect from target1.
+iscsiadm -m node -T iqn.2023-04.com.openeuler:target1 -u
+iscsiadm -m session
+
+
+On Client02, repeat the operations to unmount the drive and disconnect from target1.
+
+
+Step 11 Delete the target on the server.
+On ecs-san, check the target information. No connection exists.
+
+Delete the connection addresses, logical unit, and target1 in sequence.
+tgtadm --lld iscsi --mode target --op unbind --tid 1 --initiator-address 192.168.1.21
+tgtadm --lld iscsi --mode target --op unbind --tid 1 --initiator-address 192.168.1.22
+
+tgtadm --lld iscsi --mode logicalunit --op delete --tid 1 --lun 1
+tgtadm --lld iscsi --mode target --op show
+
+
+Run the following command to delete target1:
+tgtadm --lld iscsi --mode target --op delete --tid 1
+
+Step 12 Create a target using the target configuration file.
+Configurations set by the tgtadm command are saved in the memory and will be lost
+when the tgt service or system restarts. To make the configurations persistent, save them
+to the configuration file.
+The default target configuration file is /etc/tgt/targets.conf.
+On ecs-san, add the following content to the end of /etc/tgt/targets.conf, save the file,
+and exit.
+
+<target iqn.2023-04.com.openeuler:target2> # Start creation. Edit the target and IQN.
+ backing-store /dev/vdb # Add a drive.
+ initiator-address 192.168.1.0/24 # Allow connections from subnet
+192.168.1.0/24.
+</target> # End target creation.
+
+
+Restart the tgtd service and check the target information.
+systemctl restart tgtd
+tgtadm --lld iscsi --op show --mode target
+On Client01, connect to and mount the target. Then, test the connection.
+
+Step 13 Enable the client to automatically mount the SAN storage upon system startup.
+By default, the storage mounting configuration is lost after a client is restarted, and
+manual remounting is required. Configuring automatic mounting at startup streamlines
+operations and enhances user experience.
+On Client01, check whether the mounted directory still exists after the restart
+The mount point does not exist.
+Check the drive information. The drive is not connected. Reconnect and log in to the
+target.
+
+Run the following command to enable automatic login upon system startup:
+
+iscsiadm -m node -T iqn.2023-04.com.openeuler:target2 -p 192.168.1.3 --op update -n node.startup -v
+automatic
+
+
+Remount drive /dev/sda to mount point /mnt/san.
+mount /dev/sda /mnt/san
+
+Add the following content to /etc/fstab and save the file:
+/dev/sda /mnt/san ext4 defaults,_netdev 0 0
+Restart Client01 again and check whether the drive is mounted.
+df -h
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
