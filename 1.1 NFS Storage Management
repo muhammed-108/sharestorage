@@ -1,0 +1,137 @@
+1.1.3 Procedure
+Step 1 Create ECSs.
+Create three ECSs based on the lab networking.
+Step 2 Install the NFS server.
+Log in to ecs-nfs and check whether nfs-utils and rpcbind have been installed.
+rpm -aq | grep nfs
+rpm -aq | grep rpcbind
+
+The private OS image used in this lab contains the nfs-utils and rpcbind software
+packages, and the services have been installed. You only need to start the services.
+If the nfs or rpcbind process does not exist in the environment, manually install nfs-utils.
+rpcbind will be automatically installed with nfs-utils.
+
+yum install nfs-utils
+
+
+After the installation is complete, check the NFS service status.
+systemctl status nfs
+
+Start the nfs service and enable it to automatically start upon system startup.
+systemctl enable nfs
+systemctl start nfs
+
+Check the NFS service status again.
+systemctl status nfs
+
+
+Step 3 Configure an NFS shared directory.
+Create a shared directory /data and check whether the creation is successful. The shared
+directory will be mounted and accessed by clients on other ECSs.
+mkdir /data
+ls /
+
+
+Edit the /etc/exports configuration file to allow access from any clients.
+/data *(rw,sync,no_root_squash)
+
+After the configuration is complete, restart the nfs service.
+systemctl restart nfs
+
+
+Check whether the shared directory exists.
+showmount -e
+
+Step 4 Configure the client.
+Log in to ECS Client01 and install the nfs-utils and rpcbind services by referring to Step 2
+
+In this lab, Client01 and ecs-nfs are on the same network and are mutually reachable.
+
+Proceed to Step 5. If the ECSs cannot reach each other, establish connectivity between
+them before performing subsequent operations.
+
+Step 5 Mount the shared directory to the client.
+On Client01, create mount point /mnt/data.
+mkdir /mnt/data
+
+Check whether the shared directory is available on ecs-nfs.
+showmount -e 192.168.1.10
+
+If the shared directory exists, mount it to the /mnt/data directory on the client.
+mount -t nfs 192.168.1.10:/data /mnt/data
+
+Successful mounting produces no output. Run the df -h command to check the status of
+storage on Client01.
+df -h 
+
+Step 6 Uses the NFS shared directory on the client.
+On Client01, enter the mount point and create file01 in the shared directory.
+cd /mnt/data
+touch file01
+
+
+
+On ecs-nfs, go to the /data directory and check whether the preceding operation is
+successful.
+
+Log in to Client02 and repeat steps 4 and 5 to mount the NFS shared directory.
+dway awana
+df -h
+
+Step 7 Access files in the share directory from a client.
+On Client02, go to the mount directory and view files in the directory.
+cd /mnt/data
+ls
+cat file01
+Modify file01 as follows:
+this is from client02
+On Client01, check the file content.
+You can see that the file has been modified.
+
+
+
+Step 8 Configure access control on the NFS shared directory.
+On ecs-nfs, modify the /etc/exports file to refine client access permissions and restart
+the NFS service.
+
+/data 192.168.1.21/32(rw,sync,no_root_squash)
+/data 192.168.1.22/32(ro)
+
+cat /etc/exports
+/data 192.168.1.21/32(rw,sync,no_root_squash)
+/data 192.168.1.22/32(ro)
+
+har haman shtn
+On Client01, modify file01 in the shared directory as follows.
+
+cat file01
+
+On Client02, modify file01 in the shared directory as follows.
+petale ka natwani bigorit
+
+
+
+You can see that Client02 has only the read-only permission on the file and cannot
+modify it. Try creating files in the shared directory. You can see that Client02 does not
+have the permission to create files, while Client01 does.
+
+Step 9 Set automatic mounting upon system startup.
+Restart Client01 and check its storage information.
+df -h
+After the restart, the shared directory is unmounted. Configure automatic mounting.
+On Client01, add the following content to the /etc/fstab file, and save the file.
+192.168.1.10:/data /mnt/data nfs defaults 0 0
+
+Restart Client01 again and check its storage information. You can see that the shared
+directory is automatically mounted.
+
+df -h
+
+
+
+
+
+
+
+
+
